@@ -3841,3 +3841,36 @@ textarea {
   break-inside: avoid;
   page-break-inside: avoid;
 }
+/* ═══ OX 내용일치 패치 스타일 ═══ */
+.q-ox-item { display: block; }
+.q-ox-main { display: flex; align-items: baseline; gap: 4px; }
+.q-ox-main .q-ox-text { flex: 1; }
+
+.q-trans-line-row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin: 1.5mm 0 2mm 20px;
+  font-size: 8.5pt;
+  color: #444;
+}
+.q-trans-line {
+  flex: 1;
+  border-bottom: 1px solid #aaa;
+  min-height: 5mm;
+}
+
+.q-choice-item-wrap { display: block; }
+
+.answer-item-body { display: flex; flex-direction: column; gap: 2px; }
+.answer-mc-expl {
+  font-size: 8pt;
+  color: #444;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+.answer-ox-detail { display: flex; flex-direction: column; gap: 1px; }
+.answer-ox-translation { font-size: 8pt; color: #444; }
+
+.cp-ox-answer-row { flex-wrap: wrap; }
+.cp-mc-expl { width: 100%; margin-top: 6px; }
