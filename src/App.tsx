@@ -26,6 +26,7 @@ interface OxSentence {
   text: string;
   answer: 'O' | 'X' | '';
   explanation: string;
+  translation: string;   // 한글 해석 (해설지 표시용)
 }
 
 // 영작 조건: 일반 텍스트 조건 또는 제시어(주어진 단어) 조건
@@ -46,8 +47,11 @@ interface Question {
   answerLines: number;        // 서술형 답란 줄 수
   answerGuide: string;        // 답안 가이드 뼈대 (빈칸은 ⟦GBLANK:s|m|l⟧ 토큰). 비어있으면 빈 줄 답란 사용
   answer: string;             // 정답 (객관식: ① 등 / 서술형: text)
-  oxSentences: OxSentence[];  // OX 문장들
+oxSentences: OxSentence[];  // OX 문장들
   groupId?: string;           // 공통 발문 그룹 ID (선택)
+  showOxTranslationLines?: boolean;     // OX: 문항 아래 해석 쓰기 칸 출력
+  showChoiceTranslationLines?: boolean; // 객관식: 선지 아래 해석 쓰기 칸 출력
+  mcExplanation?: string;               // 객관식 해설 (선지 해석 + 근거)
 }
 
 interface CommonGroup {
@@ -158,11 +162,15 @@ function normalizeQuestion(q: any): Question {
       ? q.oxSentences.map((s: any) => ({
           id: s?.id ?? `s${Date.now()}_${Math.random().toString(36).slice(2)}`,
           text: s?.text ?? '',
-          answer: s?.answer === 'O' || s?.answer === 'X' ? s.answer : '',
+       answer: s?.answer === 'O' || s?.answer === 'X' ? s.answer : '',
           explanation: s?.explanation ?? '',
+          translation: s?.translation ?? '',
         }))
       : [],
-    groupId: q?.groupId,
+  groupId: q?.groupId,
+    showOxTranslationLines: !!q?.showOxTranslationLines,
+    showChoiceTranslationLines: !!q?.showChoiceTranslationLines,
+    mcExplanation: q?.mcExplanation ?? '',
   };
 }
 
@@ -820,6 +828,8 @@ interface ComposerState {
   answerGuide: string;
   answer: string;
   oxSentences: OxSentence[];
+  showOxTranslationLines: boolean;
+  showChoiceTranslationLines: boolean;
 }
 
 const blankComposer: ComposerState = {
@@ -833,6 +843,8 @@ const blankComposer: ComposerState = {
   answerGuide: '',
   answer: '',
   oxSentences: [],
+  showOxTranslationLines: false,
+  showChoiceTranslationLines: false,
 };
 
 // ═══════════════════════════════════════════════════════
@@ -1019,7 +1031,9 @@ function ControlPanel({
           answerLines: q.answerLines,
           answerGuide: q.answerGuide,
           answer: q.answer,
-          oxSentences: q.oxSentences.map((s) => ({ ...s })),
+    oxSentences: q.oxSentences.map((s) => ({ ...s })),
+          showOxTranslationLines: !!q.showOxTranslationLines,
+          showChoiceTranslationLines: !!q.showChoiceTranslationLines,
         });
         setListExpanded(true);
       }
@@ -1121,11 +1135,12 @@ function ControlPanel({
       ...s,
       oxSentences: [
         ...s.oxSentences,
-        {
+       {
           id: `s${Date.now()}_${Math.random().toString(36).slice(2)}`,
           text: '',
           answer: '',
           explanation: '',
+          translation: '',
         },
       ],
     }));
@@ -1421,7 +1436,23 @@ function ControlPanel({
         {/* 유형별 입력 영역 */}
         {composer.type === 'multiple-choice' && (
           <div className="cp-field">
-            <label>선택지</label>
+          <label>선택지</label>
+            <label className="cp-checkbox-label" style={{ marginBottom: 8 }}>
+              <input
+                type="checkbox"
+                checked={composer.showChoiceTranslationLines}
+                onChange={(e) =>
+                  setComposer({
+                    ...composer,
+                    showChoiceTranslationLines: e.target.checked,
+                  })
+                }
+              />
+              <span className="cp-checkbox-box" aria-hidden="true">✓</span>
+              <span className="cp-checkbox-text">
+                선지 아래 해석 쓰기 칸 출력
+              </span>
+            </label>
             <div className="cp-choices">
               {composer.choices.map((c, i) => (
                 <div key={i} className="cp-choice-row">
@@ -1605,7 +1636,23 @@ function ControlPanel({
 
         {composer.type === 'ox' && (
           <div className="cp-field">
-            <label>OX 판단 문장</label>
+         <label>OX 판단 문장</label>
+            <label className="cp-checkbox-label" style={{ marginBottom: 8 }}>
+              <input
+                type="checkbox"
+                checked={composer.showOxTranslationLines}
+                onChange={(e) =>
+                  setComposer({
+                    ...composer,
+                    showOxTranslationLines: e.target.checked,
+                  })
+                }
+              />
+              <span className="cp-checkbox-box" aria-hidden="true">✓</span>
+              <span className="cp-checkbox-text">
+                문항 아래 해석 쓰기 칸 출력 (영어 문항용)
+              </span>
+            </label>
             <div className="cp-ox-list">
               {composer.oxSentences.length === 0 && (
                 <div className="cp-ox-empty">
@@ -2413,6 +2460,13 @@ function AnswerRow({
             </button>
           ))}
         </div>
+        <textarea
+          className="cp-textarea cp-mc-expl"
+          value={q.mcExplanation ?? ''}
+          placeholder="선지 해석 · 정답 근거 (해설지에 표시)"
+          onChange={(e) => onUpdate(q.id, { mcExplanation: e.target.value })}
+          rows={3}
+        />
       </div>
     );
   }
@@ -2473,11 +2527,23 @@ function AnswerRow({
                   X
                 </button>
               </div>
+             <input
+                className="cp-input cp-ox-explanation"
+                value={s.translation}
+                placeholder="한글 해석 (해설지 표시)"
+                onChange={(e) =>
+                  onUpdate(q.id, {
+                    oxSentences: q.oxSentences.map((ox, idx) =>
+                      idx === i ? { ...ox, translation: e.target.value } : ox
+                    ),
+                  })
+                }
+              />
               {s.answer === 'X' && (
                 <input
                   className="cp-input cp-ox-explanation"
                   value={s.explanation}
-                  placeholder="X 해설 (간단히)"
+                  placeholder="X 근거 (간단히)"
                   onChange={(e) =>
                     onUpdate(q.id, {
                       oxSentences: q.oxSentences.map((ox, idx) =>
@@ -3862,12 +3928,22 @@ function QuestionBlock({
         <AnswerArea lines={q.answerLines} guide={q.answerGuide} />
       )}
 
-      {q.type === 'multiple-choice' &&
+ {q.type === 'multiple-choice' &&
         q.choices.map((c, i) => (
-          <ChoiceItem key={i} choice={c} index={i} />
+          <ChoiceItem
+            key={i}
+            choice={c}
+            index={i}
+            showTranslation={!!q.showChoiceTranslationLines}
+          />
         ))}
 
-      {q.type === 'ox' && <OxBlock sentences={q.oxSentences} />}
+      {q.type === 'ox' && (
+        <OxBlock
+          sentences={q.oxSentences}
+          showTranslation={!!q.showOxTranslationLines}
+        />
+      )}
     </>
   );
 }
@@ -3962,13 +4038,28 @@ function ConditionsView({ conditions }: { conditions: Condition[] }) {
   );
 }
 
-function ChoiceItem({ choice, index }: { choice: string; index: number }) {
+function ChoiceItem({
+  choice,
+  index,
+  showTranslation,
+}: {
+  choice: string;
+  index: number;
+  showTranslation?: boolean;
+}) {
   return (
-    <div className="q-choice-item">
-      <span className="q-choice-mark">
-        {['①', '②', '③', '④', '⑤'][index]}
-      </span>
-      <span className="q-choice-text">{choice || ' '}</span>
+    <div className="q-choice-item-wrap">
+      <div className="q-choice-item">
+        <span className="q-choice-mark">
+          {['①', '②', '③', '④', '⑤'][index]}
+        </span>
+        <span className="q-choice-text">{choice || ' '}</span>
+      </div>
+      {showTranslation && choice.trim() !== '' && (
+        <div className="q-trans-line-row">
+          해석: <span className="q-trans-line" />
+        </div>
+      )}
     </div>
   );
 }
@@ -4014,7 +4105,13 @@ function AnswerArea({ lines, guide }: { lines: number; guide: string }) {
   );
 }
 
-function OxBlock({ sentences }: { sentences: OxSentence[] }) {
+function OxBlock({
+  sentences,
+  showTranslation,
+}: {
+  sentences: OxSentence[];
+  showTranslation?: boolean;
+}) {
   if (sentences.length === 0) {
     return (
       <div className="q-ox-empty">(OX 문장이 없습니다)</div>
@@ -4024,10 +4121,17 @@ function OxBlock({ sentences }: { sentences: OxSentence[] }) {
     <ol className="q-ox-list">
       {sentences.map((s, i) => (
         <li key={s.id} className="q-ox-item">
-          <span className="q-ox-num">({i + 1})</span>
-          <span className="q-ox-text">{s.text}</span>
-          <span className="q-ox-dots" aria-hidden="true" />
-          <span className="q-ox-box">(&nbsp;&nbsp;&nbsp;&nbsp;)</span>
+          <div className="q-ox-main">
+            <span className="q-ox-num">({i + 1})</span>
+            <span className="q-ox-text">{s.text}</span>
+            <span className="q-ox-dots" aria-hidden="true" />
+            <span className="q-ox-box">(&nbsp;&nbsp;&nbsp;&nbsp;)</span>
+          </div>
+          {showTranslation && (
+            <div className="q-trans-line-row">
+              해석: <span className="q-trans-line" />
+            </div>
+          )}
         </li>
       ))}
     </ol>
@@ -4107,12 +4211,15 @@ function AnswerKeyPage({
 }
 
 function AnswerItem({ q, num }: { q: Question; num: number }) {
-  if (q.type === 'multiple-choice') {
+if (q.type === 'multiple-choice') {
     return (
       <div className="answer-item">
         <span className="answer-item-num">{num}.</span>
         <span className="answer-item-body">
           <span className="answer-item-value">{q.answer || '—'}</span>
+          {q.mcExplanation && (
+            <span className="answer-mc-expl">{q.mcExplanation}</span>
+          )}
         </span>
       </div>
     );
@@ -4147,8 +4254,19 @@ function AnswerItem({ q, num }: { q: Question; num: number }) {
               >
                 {s.answer || '—'}
               </span>
-              {s.answer === 'X' && s.explanation && (
-                <span className="answer-ox-explanation">→ {s.explanation}</span>
+            {(s.translation || (s.answer === 'X' && s.explanation)) && (
+                <span className="answer-ox-detail">
+                  {s.translation && (
+                    <span className="answer-ox-translation">
+                      {s.translation}
+                    </span>
+                  )}
+                  {s.answer === 'X' && s.explanation && (
+                    <span className="answer-ox-explanation">
+                      → {s.explanation}
+                    </span>
+                  )}
+                </span>
               )}
             </div>
           ))}
