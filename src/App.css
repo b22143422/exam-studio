@@ -3841,42 +3841,66 @@ textarea {
   break-inside: avoid;
   page-break-inside: avoid;
 }
-/* ═══ OX 내용일치 패치 스타일 ═══ */
-.q-ox-item { display: block; }
-.q-ox-main { display: flex; align-items: baseline; gap: 4px; }
-.q-ox-main .q-ox-text { flex: 1; }
+/* ═══════════════════════════════════════════
+   OX 내용일치 최종 패치 (이전 OX 패치 전부 대체)
+   ═══════════════════════════════════════════ */
 
+/* ── OX 문항: 정렬형 답란 ── */
+.q-ox-list { padding-left: 5mm; gap: 0; }
+
+.q-ox-item {
+  display: block;
+  padding: 1.5mm 0;
+  border-bottom: 0.4px solid var(--rule-soft);
+}
+.q-ox-item:last-child { border-bottom: none; padding-bottom: 0.5mm; }
+
+.q-ox-main {
+  display: grid;
+  grid-template-columns: auto 1fr 12mm;
+  column-gap: 1.6mm;
+  align-items: baseline;
+}
+.q-ox-main .q-ox-num { font-weight: 700; }
+.q-ox-main .q-ox-text { display: block; line-height: 1.6; }
+.q-ox-main .q-ox-dots { display: none; }
+.q-ox-main .q-ox-box {
+  justify-self: end;
+  align-self: start;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+/* ── 해석 쓰기 줄 ── */
 .q-trans-line-row {
   display: flex;
   align-items: baseline;
-  gap: 5px;
-  margin: 1.5mm 0 2mm 20px;
-  font-size: 8.5pt;
-  color: #444;
+  gap: 1.5mm;
+  margin: 1.2mm 0 0.3mm 6.5mm;
+  font-size: 8pt;
+  color: var(--ink-3);
 }
 .q-trans-line {
   flex: 1;
-  border-bottom: 1px solid #aaa;
-  min-height: 5mm;
+  border-bottom: 0.5px solid var(--rule);
+  min-height: 4.5mm;
 }
 
+/* ── 객관식 선지 해석칸 ── */
 .q-choice-item-wrap { display: block; }
+.q-choice-item-wrap .q-trans-line-row { margin-left: 10mm; }
 
-.answer-item-body { display: flex; flex-direction: column; gap: 2px; }
+/* ── 해설지: 해석 + 근거 표시 ── */
+.answer-item-body { display: flex; flex-direction: column; gap: 0.5mm; }
 .answer-mc-expl {
   font-size: 8pt;
-  color: #444;
+  color: var(--ink-2);
   white-space: pre-wrap;
-  line-height: 1.5;
+  line-height: 1.55;
 }
-.answer-ox-detail { display: flex; flex-direction: column; gap: 1px; }
-.answer-ox-translation { font-size: 8pt; color: #444; }
+.answer-ox-detail { display: flex; flex-direction: column; gap: 0.3mm; }
+.answer-ox-translation { font-size: 8pt; color: var(--ink-2); }
 
-.cp-ox-answer-row { flex-wrap: wrap; }
+/* ── 편집 패널: OX 해석/근거 입력칸 ── */
+.cp-ox-answer-row { grid-template-columns: 30px auto 1fr 1fr; gap: 6px; }
 .cp-mc-expl { width: 100%; margin-top: 6px; }
-/* ═══ OX 배치 개선 v2 — 괄호 우측 하단 ═══ */
-.q-ox-main { display: block; overflow: hidden; }
-.q-ox-main .q-ox-text { display: inline; }
-.q-ox-main .q-ox-dots { display: none; }
-.q-ox-main .q-ox-box { float: right; white-space: nowrap; margin-left: 8px; }
-.q-trans-line-row { clear: both; }
