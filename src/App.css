@@ -3874,8 +3874,9 @@ textarea {
 
 .cp-ox-answer-row { flex-wrap: wrap; }
 .cp-mc-expl { width: 100%; margin-top: 6px; }
-/* ═══ OX 배치 개선 — 긴 문장용 ═══ */
-.q-ox-main { display: flex; align-items: flex-start; gap: 6px; }
-.q-ox-main .q-ox-text { flex: 1 1 auto; min-width: 0; }
+/* ═══ OX 배치 개선 v2 — 괄호 우측 하단 ═══ */
+.q-ox-main { display: block; overflow: hidden; }
+.q-ox-main .q-ox-text { display: inline; }
 .q-ox-main .q-ox-dots { display: none; }
-.q-ox-main .q-ox-box { flex: 0 0 auto; white-space: nowrap; margin-left: 4px; }
+.q-ox-main .q-ox-box { float: right; white-space: nowrap; margin-left: 8px; }
+.q-trans-line-row { clear: both; }
