@@ -3854,18 +3854,18 @@ textarea {
 }
 
 .q-ox-main {
-  display: grid;
-  grid-template-columns: auto 1fr 12mm;
-  column-gap: 1.6mm;
-  align-items: baseline;
+  display: block;
+  padding-left: 7mm;
+  text-indent: -7mm;
+  line-height: 1.6;
 }
-.q-ox-main .q-ox-num { font-weight: 700; }
-.q-ox-main .q-ox-text { display: block; line-height: 1.6; }
+.q-ox-main .q-ox-num { font-weight: 700; margin-right: 1mm; }
+.q-ox-main .q-ox-text { display: inline; }
 .q-ox-main .q-ox-dots { display: none; }
 .q-ox-main .q-ox-box {
-  justify-self: end;
-  align-self: end;
+  display: inline;
   white-space: nowrap;
+  margin-left: 1.5mm;
   font-weight: 600;
 }
 
