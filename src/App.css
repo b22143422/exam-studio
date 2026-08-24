@@ -3902,3 +3902,18 @@ textarea {
 /* ── 편집 패널: OX 해석/근거 입력칸 ── */
 .cp-ox-answer-row { grid-template-columns: 30px auto 1fr 1fr; gap: 6px; }
 .cp-mc-expl { width: 100%; margin-top: 6px; }
+/* ═══════════════════════════════════════════
+   정답지 첫 장 범위 라벨 (PDF 병합 시 파트 식별용)
+   ═══════════════════════════════════════════ */
+   .answer-header-with-scope {
+    display: block;
+  }
+  .answer-header-with-scope .answer-header-top {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 5mm;
+    align-items: end;
+  }
+  .answer-header-scope {
+    margin-top: 3mm;
+  }
