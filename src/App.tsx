@@ -4143,15 +4143,23 @@ function OxBlock({
 // ═══════════════════════════════════════════════════════
 function AnswerHeader({ header }: { header: ExamHeader }) {
   return (
-    <header className="answer-header">
-      <div className="answer-header-text">
-        <div className="answer-header-tag">ANSWER KEY</div>
-        <h1 className="answer-header-title">정답 및 해설</h1>
+    <header className="answer-header answer-header-with-scope">
+      <div className="answer-header-top">
+        <div className="answer-header-text">
+          <div className="answer-header-tag">ANSWER KEY</div>
+          <h1 className="answer-header-title">정답 및 해설</h1>
+        </div>
+        <div className="answer-header-meta">
+          <span>{header.academyName}</span>
+          {header.title && <span>{header.title}</span>}
+        </div>
       </div>
-      <div className="answer-header-meta">
-        <span>{header.academyName}</span>
-        {header.title && <span>{header.title}</span>}
-      </div>
+      {header.scope && (
+        <div className="paper-header-scope answer-header-scope">
+          <span className="paper-header-scope-label">범위</span>
+          <span className="paper-header-scope-text">{header.scope}</span>
+        </div>
+      )}
     </header>
   );
 }
