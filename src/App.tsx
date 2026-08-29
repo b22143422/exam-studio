@@ -3450,10 +3450,21 @@ function paginate(
 
   // 측정 레이어(화면 밖)와 실제 렌더 사이의 미세한 오차(웹폰트 로드 타이밍,
   // 줄간격 반올림 등)를 흡수하기 위한 블록별 안전 버퍼.
-  // 이게 없으면 답란처럼 여러 줄짜리 블록이 경계에서 한 줄씩 삐져나가 잘린다.
   const MEASURE_BUFFER_PX = 2 * MM_TO_PX;
-  const blockH = (block: Block): number =>
-    (heights[block.id] ?? 0) + MEASURE_BUFFER_PX;
+  // 지문 박스(.q-passage)의 세로 패딩(위+아래 각 2.5mm). 조각들이 같은 컬럼에서
+  // 하나의 박스로 병합 렌더될 때, 측정 때 조각마다 들어간 이 패딩이 실제로는
+  // 첫/마지막 조각에서만 남는다. 그래서 "이어지는 조각"은 이 패딩만큼 빼서
+  // 측정-렌더 높이를 일치시킨다(왼쪽 컬럼 하단 여백 낭비 방지).
+  const PASSAGE_BOX_VPAD_PX = 5 * MM_TO_PX;
+  const blockH = (block: Block): number => {
+    let h = (heights[block.id] ?? 0) + MEASURE_BUFFER_PX;
+    // 지문 조각이 앞 조각과 같은 컬럼에 이어붙는 경우, 병합으로 사라지는
+    // 박스 세로 패딩만큼 실제 높이가 줄어든다.
+    if (block.passagePart && lastGroupId === block.groupId && used > 0) {
+      h -= PASSAGE_BOX_VPAD_PX;
+    }
+    return h;
+  };
 
   const hasContent = (): boolean =>
     current.wide.length > 0 ||
@@ -3472,7 +3483,16 @@ function paginate(
   const placeColumn = (block: Block): void => {
     const h = blockH(block);
     const isContinuation = lastGroupId === block.groupId;
-    const gap = used === 0 ? 0 : isContinuation ? BLOCK_GAP_PX : GROUP_GAP_PX;
+    // 지문 조각이 앞 조각과 이어붙는 경우엔 간격 0(하나의 박스로 병합되므로)
+    const mergingPassage =
+      !!block.passagePart && isContinuation && used > 0;
+    const gap = used === 0
+      ? 0
+      : mergingPassage
+        ? 0
+        : isContinuation
+          ? BLOCK_GAP_PX
+          : GROUP_GAP_PX;
     const proposed = used + gap + h;
 
     // 현재 컬럼에 들어가면 배치
