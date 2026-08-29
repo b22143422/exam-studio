@@ -52,6 +52,7 @@ oxSentences: OxSentence[];  // OX 문장들
   showOxTranslationLines?: boolean;     // OX: 문항 아래 해석 쓰기 칸 출력
   showChoiceTranslationLines?: boolean; // 객관식: 선지 아래 해석 쓰기 칸 출력
   mcExplanation?: string;               // 객관식 해설 (선지 해석 + 근거)
+  pageBreakBefore?: boolean;            // 이 문제 앞에서 강제로 페이지 나누기 (수동)
 }
 
 interface CommonGroup {
@@ -170,6 +171,7 @@ function normalizeQuestion(q: any): Question {
   groupId: q?.groupId,
     showOxTranslationLines: !!q?.showOxTranslationLines,
     showChoiceTranslationLines: !!q?.showChoiceTranslationLines,
+    pageBreakBefore: !!q?.pageBreakBefore,
     mcExplanation: q?.mcExplanation ?? '',
   };
 }
@@ -350,6 +352,42 @@ function isPlainTextEmpty(html: string): boolean {
   return stripped.length === 0;
 }
 
+// ─── 긴 지문 문단 분할 ───
+// 공통지문/개별지문이 한 페이지를 넘칠 만큼 길 때, 문단 경계에서 여러 조각으로
+// 나눠 페이지에 자연스럽게 흐르게 한다. 문장 중간은 절대 끊지 않는다.
+// sanitizeRichHtml이 <br>/문단을 \n으로 보존하므로 그 \n을 기준으로 나눈다.
+// 잘게 쪼개진 짧은 문단들은 다시 합쳐서 적당한 크기(청크)로 균형을 맞춘다.
+function splitPassageParts(html: string): string[] {
+  const sanitized = sanitizeRichHtml(html);
+  if (!sanitized.trim()) return [];
+
+  // 1) 빈 줄(문단 경계)로 1차 분할, 없으면 줄바꿈으로
+  let units = sanitized.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
+  if (units.length <= 1) {
+    const lines = sanitized.split(/\n/).map((s) => s.trim()).filter(Boolean);
+    units = lines.length > 1 ? lines : [sanitized.trim()];
+  }
+
+  // 2) 인접한 짧은 문단들을 목표 크기까지 합쳐 균형 잡힌 청크로
+  //    (한 조각이 대략 컬럼 절반~하나 분량이 되도록)
+  const TARGET = 650; // 청크 목표 글자 수
+  const chunks: string[] = [];
+  let buf = '';
+  for (const u of units) {
+    if (buf === '') {
+      buf = u;
+    } else if (buf.length + u.length + 1 <= TARGET) {
+      buf = buf + '\n' + u;
+    } else {
+      chunks.push(buf);
+      buf = u;
+    }
+  }
+  if (buf) chunks.push(buf);
+
+  return chunks;
+}
+
 // ─── 답안 가이드 (서술형 답란 스캐폴딩) ───
 // 가이드 뼈대 문장에 학생이 채울 빈칸을 ⟦GBLANK:s|m|l⟧ 토큰으로 심는다.
 // s=짧음, m=보통, l=긺 (밑줄 길이).
@@ -447,6 +485,14 @@ export default function App() {
       [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
       return next;
     });
+  };
+
+  const togglePageBreak = (id: string) => {
+    setQuestions((prev) =>
+      prev.map((q) =>
+        q.id === id ? { ...q, pageBreakBefore: !q.pageBreakBefore } : q
+      )
+    );
   };
 
   // ─── 워크시트 아이템 관리 ───
@@ -664,6 +710,7 @@ export default function App() {
         onUpdate={updateQuestion}
         onDelete={deleteQuestion}
         onMove={moveQuestion}
+        onTogglePageBreak={togglePageBreak}
         onAddWorksheetItem={addWorksheetItem}
         onUpdateWorksheetItem={updateWorksheetItem}
         onDeleteWorksheetItem={deleteWorksheetItem}
@@ -796,6 +843,7 @@ interface ControlPanelProps {
   onUpdate: (id: string, patch: Partial<Question>) => void;
   onDelete: (id: string) => void;
   onMove: (id: string, dir: -1 | 1) => void;
+  onTogglePageBreak: (id: string) => void;
   onAddWorksheetItem: (item: Omit<WorksheetItem, 'id'>) => void;
   onUpdateWorksheetItem: (id: string, patch: Partial<WorksheetItem>) => void;
   onDeleteWorksheetItem: (id: string) => void;
@@ -989,6 +1037,7 @@ function ControlPanel({
   onUpdate,
   onDelete,
   onMove,
+  onTogglePageBreak,
   onAddWorksheetItem,
   onUpdateWorksheetItem,
   onDeleteWorksheetItem,
@@ -1810,6 +1859,7 @@ function ControlPanel({
                 onSelectEdit={onSelectEdit}
                 onDelete={onDelete}
                 onMove={onMove}
+                onTogglePageBreak={onTogglePageBreak}
                 onEditGroup={(gid) => setEditingGroupId(gid)}
               />
             )}
@@ -2270,6 +2320,7 @@ function QuestionList({
   onSelectEdit,
   onDelete,
   onMove,
+  onTogglePageBreak,
   onEditGroup,
 }: {
   questions: Question[];
@@ -2281,6 +2332,7 @@ function QuestionList({
   onSelectEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onMove: (id: string, dir: -1 | 1) => void;
+  onTogglePageBreak: (id: string) => void;
   onEditGroup: (gid: string) => void;
 }) {
   // 연속된 같은 그룹끼리 묶어 렌더링
@@ -2349,6 +2401,9 @@ function QuestionList({
           <em>{idx + 1}</em>
         </div>
         <div className="cp-list-text" onClick={() => onSelectEdit(q.id)}>
+          {q.pageBreakBefore && (
+            <span className="cp-list-badge pgbreak">⤵ 페이지</span>
+          )}
           {q.hasPassage && <span className="cp-list-badge">본문</span>}
           {q.conditions.length > 0 && (
             <span className="cp-list-badge cond">조건</span>
@@ -2360,6 +2415,17 @@ function QuestionList({
           )}
         </div>
         <div className="cp-list-tools">
+          <button
+            title={
+              q.pageBreakBefore
+                ? '페이지 나누기 해제'
+                : '이 문제부터 새 페이지에서 시작'
+            }
+            className={`cp-list-pgbreak ${q.pageBreakBefore ? 'active' : ''}`}
+            onClick={() => onTogglePageBreak(q.id)}
+          >
+            ⤵
+          </button>
           <button
             title="위로"
             onClick={() => onMove(q.id, -1)}
@@ -3207,6 +3273,7 @@ interface Block {
   id: string;
   groupId: string;  // 같은 공통그룹/문제 묶음 식별 (gr-xxx = 공통그룹 소속)
   kind: BlockKind;
+  pageBreakBefore?: boolean;  // 이 블록 앞에서 강제 개페이지 (수동)
   render: () => React.ReactNode;
 }
 
@@ -3236,20 +3303,72 @@ function buildBlocks(
 
       const startNum = cursor + 1;
       const endNum = end + 1;
+      const groupFirstBlockIdx = blocks.length; // 이 그룹의 첫 블록 위치
 
       if (group) {
-        blocks.push({
-          id: `${groupId}-group`,
-          groupId: `gr-${groupId}`,
-          kind: 'group',
-          render: () => (
-            <CommonGroupBlock
-              group={group}
-              startNum={startNum}
-              endNum={endNum}
-            />
-          ),
-        });
+        const passageHtml = group.hasCommonPassage ? group.commonPassage : '';
+        const passageChars = passageHtml
+          ? passageHtml.replace(/<[^>]*>/g, '').length
+          : 0;
+        // 공통지문이 한 컬럼을 크게 넘칠 만큼 길면(대략 1200자↑) 문단 단위로
+        // 쪼개 별도 블록으로 만든다. 그러면 페이지 경계에서 문단째 넘어간다.
+        const SPLIT_THRESHOLD = 1200;
+        const shouldSplit =
+          passageChars > SPLIT_THRESHOLD &&
+          !isPlainTextEmpty(passageHtml);
+
+        if (shouldSplit) {
+          const parts = splitPassageParts(passageHtml);
+          // 헤더(공통 발문)만 담은 블록
+          blocks.push({
+            id: `${groupId}-group`,
+            groupId: `gr-${groupId}`,
+            kind: 'group',
+            render: () => (
+              <CommonGroupHeaderOnly
+                group={group}
+                startNum={startNum}
+                endNum={endNum}
+              />
+            ),
+          });
+          // 지문 문단들을 각각 별도 블록으로
+          parts.forEach((partHtml, pi) => {
+            blocks.push({
+              id: `${groupId}-passage-${pi}`,
+              groupId: `gr-${groupId}`,
+              kind: 'group',
+              render: () => (
+                <PassageView
+                  html={partHtml}
+                  part={
+                    parts.length === 1
+                      ? 'single'
+                      : pi === 0
+                        ? 'first'
+                        : pi === parts.length - 1
+                          ? 'last'
+                          : 'mid'
+                  }
+                  continued={pi > 0}
+                />
+              ),
+            });
+          });
+        } else {
+          blocks.push({
+            id: `${groupId}-group`,
+            groupId: `gr-${groupId}`,
+            kind: 'group',
+            render: () => (
+              <CommonGroupBlock
+                group={group}
+                startNum={startNum}
+                endNum={endNum}
+              />
+            ),
+          });
+        }
       }
 
       for (let i = cursor; i <= end; i++) {
@@ -3258,10 +3377,17 @@ function buildBlocks(
           id: `${qq.id}-full`,
           groupId: group ? `gr-${groupId}` : qq.id,
           kind: 'question',
+          // 그룹 첫 문제의 페이지나누기는 그룹 헤더 블록이 담당하므로 제외
+          pageBreakBefore: i > cursor ? !!qq.pageBreakBefore : false,
           render: () => (
             <QuestionBlock q={qq} number={numberMap.get(qq.id)!} inGroup={true} />
           ),
         });
+      }
+
+      // 그룹 첫 문제에 페이지나누기가 걸려 있으면 그룹 첫 블록(헤더/지문)부터 넘긴다
+      if (group && questions[cursor].pageBreakBefore && blocks[groupFirstBlockIdx]) {
+        blocks[groupFirstBlockIdx].pageBreakBefore = true;
       }
 
       cursor = end + 1;
@@ -3270,6 +3396,7 @@ function buildBlocks(
         id: `${q.id}-full`,
         groupId: q.id,
         kind: 'question',
+        pageBreakBefore: !!q.pageBreakBefore,
         render: () => (
           <QuestionBlock q={q} number={numberMap.get(q.id)!} inGroup={false} />
         ),
@@ -3365,8 +3492,13 @@ function paginate(
   for (const block of blocks) {
     const h = blockH(block);
 
+    // 수동 페이지 나누기: 이 블록 앞에서 강제로 새 페이지 시작
+    if (block.pageBreakBefore && hasContent()) {
+      pushPage();
+    }
+
     // 한 컬럼 높이보다도 큰 블록만 전체폭 단독 배치.
-    // (긴 공통 지문/긴 개별 지문) — 본문을 쪼개지 않기 위한 유일한 예외.
+    // (문단 분할 후에도 남는, 컬럼보다 큰 단일 조각) — 잘림 방지 위한 예외.
     if (h > availCol()) {
       if (hasContent()) pushPage();
       current.wide.push(block);
@@ -3903,6 +4035,19 @@ function CommonGroupBlock({
   );
 }
 
+// 긴 지문 분할 시: 공통 발문(헤더)만 담는 블록. 지문은 별도 조각 블록으로.
+function CommonGroupHeaderOnly({
+  group,
+  startNum,
+  endNum,
+}: {
+  group: CommonGroup;
+  startNum: number;
+  endNum: number;
+}) {
+  return <CommonGroupHeader group={group} startNum={startNum} endNum={endNum} />;
+}
+
 function QuestionBlock({
   q,
   number,
@@ -4003,9 +4148,24 @@ function QuestionStem({
 
 // 본문: 사용자가 입력한 그대로 한 박스. 분할 없음.
 // 줄바꿈은 sanitizeRichHtml이 \n으로 보존하고 white-space: pre-wrap이 반영.
-function PassageView({ html }: { html: string }) {
+function PassageView({
+  html,
+  part,
+  continued,
+}: {
+  html: string;
+  part?: 'single' | 'first' | 'mid' | 'last';
+  continued?: boolean;
+}) {
+  const cls =
+    part && part !== 'single'
+      ? `q-passage q-passage-${part}`
+      : 'q-passage';
   return (
-    <div className="q-passage">
+    <div className={cls}>
+      {continued && (
+        <span className="q-passage-continued">지문 계속</span>
+      )}
       <span
         className="q-passage-content"
         dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(html) }}
