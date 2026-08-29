@@ -3917,3 +3917,66 @@ textarea {
   .answer-header-scope {
     margin-top: 3mm;
   }
+/* ═══════════════════════════════════════════════════════
+   긴 지문 문단 분할 + 수동 페이지나누기 (추가분)
+   ※ App.css 맨 끝에 그대로 붙여넣으세요.
+═══════════════════════════════════════════════════════ */
+
+/* ─── 분할된 지문 조각을 한 흐름처럼 이어보이게 ─── */
+.q-passage-first {
+  border-bottom: none !important;
+  border-radius: 1mm 1mm 0 0 !important;
+  margin-bottom: 0 !important;
+}
+.q-passage-mid {
+  border-top: none !important;
+  border-bottom: none !important;
+  border-radius: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+.q-passage-last {
+  border-top: none !important;
+  border-radius: 0 0 1mm 1mm !important;
+  margin-top: 0 !important;
+}
+
+/* "지문 계속" 표시 (페이지 넘어가 이어지는 조각 상단) */
+.q-passage-continued {
+  display: inline-block;
+  font-size: 7pt;
+  font-weight: 700;
+  color: var(--ink-muted);
+  background: rgba(0, 0, 0, 0.05);
+  padding: 0.3mm 1.5mm;
+  border-radius: 0.7mm;
+  margin-bottom: 1mm;
+  letter-spacing: 0.05em;
+}
+
+/* ─── 문제 목록: 페이지나누기 버튼 / 뱃지 ─── */
+.cp-list-pgbreak {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--text-3);
+  font-size: 13px;
+  transition: all 0.15s ease;
+}
+.cp-list-pgbreak:hover {
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+.cp-list-pgbreak.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.cp-list-badge.pgbreak {
+  background: rgba(245, 185, 66, 0.18);
+  color: var(--accent);
+  font-weight: 700;
+}
