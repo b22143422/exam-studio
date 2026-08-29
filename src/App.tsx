@@ -356,34 +356,29 @@ function isPlainTextEmpty(html: string): boolean {
 // 공통지문/개별지문이 한 페이지를 넘칠 만큼 길 때, 문단 경계에서 여러 조각으로
 // 나눠 페이지에 자연스럽게 흐르게 한다. 문장 중간은 절대 끊지 않는다.
 // sanitizeRichHtml이 <br>/문단을 \n으로 보존하므로 그 \n을 기준으로 나눈다.
-// 잘게 쪼개진 짧은 문단들은 다시 합쳐서 적당한 크기(청크)로 균형을 맞춘다.
+// 아주 짧은 조각(대화문 한 줄 등)만 인접 조각과 합쳐 과도한 분할을 막는다.
 function splitPassageParts(html: string): string[] {
   const sanitized = sanitizeRichHtml(html);
   if (!sanitized.trim()) return [];
 
-  // 1) 빈 줄(문단 경계)로 1차 분할, 없으면 줄바꿈으로
+  // 1) 빈 줄(문단 경계)로 1차 분할, 문단이 없으면 줄바꿈으로
   let units = sanitized.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
   if (units.length <= 1) {
     const lines = sanitized.split(/\n/).map((s) => s.trim()).filter(Boolean);
     units = lines.length > 1 ? lines : [sanitized.trim()];
   }
 
-  // 2) 인접한 짧은 문단들을 목표 크기까지 합쳐 균형 잡힌 청크로
-  //    (한 조각이 대략 컬럼 절반~하나 분량이 되도록)
-  const TARGET = 650; // 청크 목표 글자 수
+  // 2) 아주 짧은 조각(대화문 등)은 앞 조각에 붙여 과분할 방지.
+  //    단, 조각을 억지로 크게 만들지 않는다(컬럼에 맞추는 건 페이지네이션이 담당).
+  const MIN_CHUNK = 220; // 이보다 짧은 조각은 앞과 병합
   const chunks: string[] = [];
-  let buf = '';
   for (const u of units) {
-    if (buf === '') {
-      buf = u;
-    } else if (buf.length + u.length + 1 <= TARGET) {
-      buf = buf + '\n' + u;
+    if (chunks.length > 0 && chunks[chunks.length - 1].length < MIN_CHUNK) {
+      chunks[chunks.length - 1] = chunks[chunks.length - 1] + '\n' + u;
     } else {
-      chunks.push(buf);
-      buf = u;
+      chunks.push(u);
     }
   }
-  if (buf) chunks.push(buf);
 
   return chunks;
 }
@@ -3274,6 +3269,13 @@ interface Block {
   groupId: string;  // 같은 공통그룹/문제 묶음 식별 (gr-xxx = 공통그룹 소속)
   kind: BlockKind;
   pageBreakBefore?: boolean;  // 이 블록 앞에서 강제 개페이지 (수동)
+  // 지문 조각 블록일 때: 같은 컬럼의 연속 조각을 하나의 박스로 병합하기 위한 정보
+  passagePart?: {
+    passageGroupId: string; // 같은 지문에서 나온 조각들의 공통 식별자
+    index: number;          // 조각 순번 (0=첫 조각)
+    total: number;          // 전체 조각 수
+    html: string;           // 이 조각의 지문 HTML
+  };
   render: () => React.ReactNode;
 }
 
@@ -3332,12 +3334,18 @@ function buildBlocks(
               />
             ),
           });
-          // 지문 문단들을 각각 별도 블록으로
+          // 지문 문단들을 각각 별도 블록으로 (Column에서 같은 컬럼 조각은 병합 렌더)
           parts.forEach((partHtml, pi) => {
             blocks.push({
               id: `${groupId}-passage-${pi}`,
               groupId: `gr-${groupId}`,
               kind: 'group',
+              passagePart: {
+                passageGroupId: `${groupId}-passage`,
+                index: pi,
+                total: parts.length,
+                html: partHtml,
+              },
               render: () => (
                 <PassageView
                   html={partHtml}
@@ -3912,14 +3920,66 @@ function Column({ blocks }: { blocks: Block[] }) {
             className={`q ${isGroupHeader ? 'q-group-header' : ''}`}
             key={i}
           >
-            {g.items.map((b, j) => (
-              <Fragment key={j}>{b.render()}</Fragment>
-            ))}
+            {renderColumnItems(g.items)}
           </article>
         );
       })}
     </div>
   );
+}
+
+// 한 컬럼(article) 안의 블록들을 렌더하되, 연속된 지문 조각은 하나의
+// 이어진 박스로 병합한다. 이 컬럼의 첫 조각이 지문의 첫 조각이 아니면
+// (= 앞 컬럼/페이지에서 넘어온 경우) "지문 계속"을 표시한다.
+function renderColumnItems(items: Block[]): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  let k = 0;
+  while (k < items.length) {
+    const b = items[k];
+    if (b.passagePart) {
+      // 연속된 지문 조각들을 모은다 (같은 passageGroupId)
+      const pgId = b.passagePart.passageGroupId;
+      const run: Block[] = [b];
+      let m = k + 1;
+      while (
+        m < items.length &&
+        items[m].passagePart &&
+        items[m].passagePart!.passageGroupId === pgId
+      ) {
+        run.push(items[m]);
+        m++;
+      }
+      const mergedHtml = run
+        .map((rb) => rb.passagePart!.html)
+        .join('\n\n');
+      const firstIdx = run[0].passagePart!.index;
+      const lastIdx = run[run.length - 1].passagePart!.index;
+      const total = run[0].passagePart!.total;
+      const continuedFromPrev = firstIdx > 0;      // 앞 컬럼에서 이어짐
+      const continuesToNext = lastIdx < total - 1; // 다음 컬럼으로 이어짐
+      out.push(
+        <PassageView
+          key={`pass-${pgId}-${firstIdx}`}
+          html={mergedHtml}
+          part={
+            !continuedFromPrev && !continuesToNext
+              ? 'single'
+              : !continuedFromPrev
+                ? 'first'
+                : !continuesToNext
+                  ? 'last'
+                  : 'mid'
+          }
+          continued={continuedFromPrev}
+        />
+      );
+      k = m;
+    } else {
+      out.push(<Fragment key={`b-${k}`}>{b.render()}</Fragment>);
+      k++;
+    }
+  }
+  return out;
 }
 
 function PaperHeader({
