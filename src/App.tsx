@@ -3394,7 +3394,7 @@ function buildBlocks(
               />
             ),
           });
-          // 지문 문단들을 각각 별도 블록으로 (Column에서 같은 컬럼 조각은 병합 렌더)
+          // 지문 문단들을 각각 별도 블록으로 (측정=렌더 동일 모양)
           parts.forEach((partHtml, pi) => {
             blocks.push({
               id: `${groupId}-passage-${pi}`,
@@ -3406,19 +3406,16 @@ function buildBlocks(
                 total: parts.length,
                 html: partHtml,
               },
+              // 측정 레이어용 렌더. 실제 컬럼 렌더(renderColumnItems)와 동일한
+              // PassageFragment를 사용해 측정-렌더 높이를 일치시킨다.
+              // ("지문 계속" 라벨은 실제 렌더에서만 붙을 수 있으며, 그 추가
+              // 높이는 MEASURE_BUFFER와 SAFETY_MARGIN이 흡수한다.)
               render: () => (
-                <PassageView
+                <PassageFragment
                   html={partHtml}
-                  part={
-                    parts.length === 1
-                      ? 'single'
-                      : pi === 0
-                        ? 'first'
-                        : pi === parts.length - 1
-                          ? 'last'
-                          : 'mid'
-                  }
-                  continued={pi > 0}
+                  index={pi}
+                  total={parts.length}
+                  continued={false}
                 />
               ),
             });
@@ -3511,20 +3508,8 @@ function paginate(
   // 측정 레이어(화면 밖)와 실제 렌더 사이의 미세한 오차(웹폰트 로드 타이밍,
   // 줄간격 반올림 등)를 흡수하기 위한 블록별 안전 버퍼.
   const MEASURE_BUFFER_PX = 2 * MM_TO_PX;
-  // 지문 박스(.q-passage)의 세로 패딩(위 2mm + 아래 1.6mm = 3.6mm). 조각들이
-  // 같은 컬럼에서 하나의 박스로 병합 렌더될 때, 측정 때 조각마다 들어간 이
-  // 패딩이 실제로는 첫/마지막 조각에서만 남는다. 그래서 "이어지는 조각"은
-  // 이 패딩만큼 빼서 측정-렌더 높이를 일치시킨다(컬럼 하단 여백 낭비 방지).
-  const PASSAGE_BOX_VPAD_PX = 3.6 * MM_TO_PX;
-  const blockH = (block: Block): number => {
-    let h = (heights[block.id] ?? 0) + MEASURE_BUFFER_PX;
-    // 지문 조각이 앞 조각과 같은 컬럼에 이어붙는 경우, 병합으로 사라지는
-    // 박스 세로 패딩만큼 실제 높이가 줄어든다.
-    if (block.passagePart && lastGroupId === block.groupId && used > 0) {
-      h -= PASSAGE_BOX_VPAD_PX;
-    }
-    return h;
-  };
+  const blockH = (block: Block): number =>
+    (heights[block.id] ?? 0) + MEASURE_BUFFER_PX;
 
   const hasContent = (): boolean =>
     current.wide.length > 0 ||
@@ -4009,63 +3994,36 @@ function Column({ blocks }: { blocks: Block[] }) {
 }
 
 // 한 컬럼(article) 안의 블록들을 렌더하되, 연속된 지문 조각은 하나의
-// 이어진 박스로 병합한다. 이 컬럼의 첫 조각이 지문의 첫 조각이 아니면
-// (= 앞 컬럼/페이지에서 넘어온 경우) "지문 계속"을 표시한다.
+// 한 컬럼(article) 안의 블록들을 렌더한다. 지문 조각은 각자 측정된 모습
+// 그대로 개별 렌더된다(측정=렌더 → 오차 0). 조각들은 GAP 0으로 이어붙어
+// 좌우 테두리가 연결된 하나의 박스처럼 보인다. 앞 컬럼에서 넘어온 첫
+// 조각에만 "지문 계속"을 표시한다.
 function renderColumnItems(items: Block[]): React.ReactNode[] {
   const out: React.ReactNode[] = [];
-  let k = 0;
-  while (k < items.length) {
-    const b = items[k];
+  let prevPassageGroup: string | null = null;
+  items.forEach((b, k) => {
     if (b.passagePart) {
-      // 연속된 지문 조각들을 모은다 (같은 passageGroupId)
-      const pgId = b.passagePart.passageGroupId;
-      const run: Block[] = [b];
-      let m = k + 1;
-      while (
-        m < items.length &&
-        items[m].passagePart &&
-        items[m].passagePart!.passageGroupId === pgId
-      ) {
-        run.push(items[m]);
-        m++;
-      }
-      // 병합: 조각 앞의 \u2029 마커 = 같은 문단의 문장 이어짐(공백으로 연결),
-      // 마커 없음 = 새 문단(\n\n으로 연결)
-      let mergedHtml = '';
-      run.forEach((rb, ri) => {
-        const raw = rb.passagePart!.html;
-        const isSentCont = raw.startsWith('\u2029');
-        const body = isSentCont ? raw.slice(1) : raw;
-        if (ri === 0) mergedHtml = body;
-        else mergedHtml += (isSentCont ? ' ' : '\n\n') + body;
-      });
-      const firstIdx = run[0].passagePart!.index;
-      const lastIdx = run[run.length - 1].passagePart!.index;
-      const total = run[0].passagePart!.total;
-      const continuedFromPrev = firstIdx > 0;      // 앞 컬럼에서 이어짐
-      const continuesToNext = lastIdx < total - 1; // 다음 컬럼으로 이어짐
+      const pp = b.passagePart;
+      // 이 컬럼에서 이 지문의 첫 조각인데 지문의 처음(index 0)이 아니면
+      // 앞 컬럼/페이지에서 이어진 것 → "지문 계속" 표시
+      const isColumnFirstOfPassage =
+        prevPassageGroup !== pp.passageGroupId;
+      const continued = isColumnFirstOfPassage && pp.index > 0;
+      prevPassageGroup = pp.passageGroupId;
       out.push(
-        <PassageView
-          key={`pass-${pgId}-${firstIdx}`}
-          html={mergedHtml}
-          part={
-            !continuedFromPrev && !continuesToNext
-              ? 'single'
-              : !continuedFromPrev
-                ? 'first'
-                : !continuesToNext
-                  ? 'last'
-                  : 'mid'
-          }
-          continued={continuedFromPrev}
+        <PassageFragment
+          key={`pf-${pp.passageGroupId}-${pp.index}`}
+          html={pp.html}
+          index={pp.index}
+          total={pp.total}
+          continued={continued}
         />
       );
-      k = m;
     } else {
+      prevPassageGroup = null;
       out.push(<Fragment key={`b-${k}`}>{b.render()}</Fragment>);
-      k++;
     }
-  }
+  });
   return out;
 }
 
@@ -4318,6 +4276,60 @@ function PassageView({
     .filter((s) => s.trim() !== '');
   return (
     <div className={cls}>
+      {continued && (
+        <span className="q-passage-continued">지문 계속</span>
+      )}
+      {paragraphs.map((p, i) => (
+        <span
+          key={i}
+          className="q-passage-para"
+          dangerouslySetInnerHTML={{ __html: p }}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ─── 지문 조각 렌더 (측정=렌더 일치) ───
+// 분할된 지문의 한 조각을 개별 렌더한다. 조각들은 GAP 0으로 세로로 이어붙어
+// 좌우 테두리가 연결된 하나의 박스처럼 보인다.
+// - index 0(첫 조각): 위 테두리 + 위 패딩
+// - 마지막 조각: 아래 테두리 + 아래 패딩
+// - 중간 조각: 좌우 테두리만 (상하 패딩·테두리 없음)
+// \u2029 마커 = 앞 조각 문장에 이어지는 조각(위 문단 간격 없음),
+// 마커 없음 = 새 문단 시작(위에 문단 간격 1.2mm).
+function PassageFragment({
+  html,
+  index,
+  total,
+  continued,
+}: {
+  html: string;
+  index: number;
+  total: number;
+  continued?: boolean;
+}) {
+  const part =
+    total === 1
+      ? 'single'
+      : index === 0
+        ? 'first'
+        : index === total - 1
+          ? 'last'
+          : 'mid';
+  const isSentCont = html.startsWith('\u2029');
+  const body = isSentCont ? html.slice(1) : html;
+  const sanitized = sanitizeRichHtml(body).replace(/\u2029/g, '');
+  const paragraphs = sanitized
+    .split(/\n\s*\n/)
+    .map((s) => s.replace(/^\n+|\n+$/g, ''))
+    .filter((s) => s.trim() !== '');
+  return (
+    <div
+      className={`q-passage q-passage-frag q-passage-frag-${part}${
+        isSentCont ? ' q-passage-frag-sentcont' : ''
+      }`}
+    >
       {continued && (
         <span className="q-passage-continued">지문 계속</span>
       )}
