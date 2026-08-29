@@ -352,6 +352,26 @@ function isPlainTextEmpty(html: string): boolean {
   return stripped.length === 0;
 }
 
+// ─── 선지 마크다운 (볼드/밑줄) ───
+// 선지 입력칸에서 **텍스트**(볼드), __텍스트__(밑줄), <b>/<strong>/<u> 태그를
+// 인식해 시험지에 스타일로 출력한다. 그 외 태그/문자는 전부 이스케이프.
+function choiceMarkdownToHtml(text: string): string {
+  if (!text) return '';
+  // 1) HTML 특수문자 이스케이프 (태그 주입 방지)
+  let s = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  // 2) 이스케이프된 허용 태그 복원: <b>, <strong>, <u> (+닫는 태그)
+  s = s
+    .replace(/&lt;(\/?)(b|strong)&gt;/gi, '<$1strong>')
+    .replace(/&lt;(\/?)u&gt;/gi, '<$1u>');
+  // 3) 마크다운 문법: **볼드**, __밑줄__
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/__([^_]+)__/g, '<u>$1</u>');
+  return s;
+}
+
 // ─── 긴 지문 문단 분할 ───
 // 공통지문/개별지문이 한 페이지를 넘칠 만큼 길 때, 문단 경계에서 여러 조각으로
 // 나눠 페이지에 자연스럽게 흐르게 한다. 문장 중간은 절대 끊지 않는다.
@@ -3451,11 +3471,11 @@ function paginate(
   // 측정 레이어(화면 밖)와 실제 렌더 사이의 미세한 오차(웹폰트 로드 타이밍,
   // 줄간격 반올림 등)를 흡수하기 위한 블록별 안전 버퍼.
   const MEASURE_BUFFER_PX = 2 * MM_TO_PX;
-  // 지문 박스(.q-passage)의 세로 패딩(위+아래 각 2.5mm). 조각들이 같은 컬럼에서
-  // 하나의 박스로 병합 렌더될 때, 측정 때 조각마다 들어간 이 패딩이 실제로는
-  // 첫/마지막 조각에서만 남는다. 그래서 "이어지는 조각"은 이 패딩만큼 빼서
-  // 측정-렌더 높이를 일치시킨다(왼쪽 컬럼 하단 여백 낭비 방지).
-  const PASSAGE_BOX_VPAD_PX = 5 * MM_TO_PX;
+  // 지문 박스(.q-passage)의 세로 패딩(위 2mm + 아래 1.6mm = 3.6mm). 조각들이
+  // 같은 컬럼에서 하나의 박스로 병합 렌더될 때, 측정 때 조각마다 들어간 이
+  // 패딩이 실제로는 첫/마지막 조각에서만 남는다. 그래서 "이어지는 조각"은
+  // 이 패딩만큼 빼서 측정-렌더 높이를 일치시킨다(컬럼 하단 여백 낭비 방지).
+  const PASSAGE_BOX_VPAD_PX = 3.6 * MM_TO_PX;
   const blockH = (block: Block): number => {
     let h = (heights[block.id] ?? 0) + MEASURE_BUFFER_PX;
     // 지문 조각이 앞 조각과 같은 컬럼에 이어붙는 경우, 병합으로 사라지는
@@ -4241,15 +4261,25 @@ function PassageView({
     part && part !== 'single'
       ? `q-passage q-passage-${part}`
       : 'q-passage';
+  // 문단(빈 줄) 단위로 나눠 각각 렌더 → 문단 간격을 CSS로 정밀 제어
+  // (pre-wrap 빈 줄은 한 줄 전체 높이를 차지해 간격이 과했음)
+  const sanitized = sanitizeRichHtml(html);
+  const paragraphs = sanitized
+    .split(/\n\s*\n/)
+    .map((s) => s.replace(/^\n+|\n+$/g, ''))
+    .filter((s) => s.trim() !== '');
   return (
     <div className={cls}>
       {continued && (
         <span className="q-passage-continued">지문 계속</span>
       )}
-      <span
-        className="q-passage-content"
-        dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(html) }}
-      />
+      {paragraphs.map((p, i) => (
+        <span
+          key={i}
+          className="q-passage-para"
+          dangerouslySetInnerHTML={{ __html: p }}
+        />
+      ))}
     </div>
   );
 }
@@ -4293,7 +4323,12 @@ function ChoiceItem({
         <span className="q-choice-mark">
           {['①', '②', '③', '④', '⑤'][index]}
         </span>
-        <span className="q-choice-text">{choice || ' '}</span>
+        <span
+          className="q-choice-text"
+          dangerouslySetInnerHTML={{
+            __html: choiceMarkdownToHtml(choice) || '&nbsp;',
+          }}
+        />
       </div>
       {showTranslation && choice.trim() !== '' && (
         <div className="q-trans-line-row">
@@ -4363,7 +4398,12 @@ function OxBlock({
         <li key={s.id} className="q-ox-item">
           <div className="q-ox-main">
             <span className="q-ox-num">({i + 1})</span>
-            <span className="q-ox-text">{s.text}</span>
+            <span
+              className="q-ox-text"
+              dangerouslySetInnerHTML={{
+                __html: choiceMarkdownToHtml(s.text),
+              }}
+            />
             <span className="q-ox-dots" aria-hidden="true" />
             <span className="q-ox-box">(&nbsp;&nbsp;&nbsp;&nbsp;)</span>
           </div>
