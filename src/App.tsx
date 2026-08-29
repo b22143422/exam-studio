@@ -375,8 +375,8 @@ function choiceMarkdownToHtml(text: string): string {
 // ─── 긴 지문 문단 분할 ───
 // 공통지문/개별지문이 한 페이지를 넘칠 만큼 길 때, 문단 경계에서 여러 조각으로
 // 나눠 페이지에 자연스럽게 흐르게 한다. 문장 중간은 절대 끊지 않는다.
-// sanitizeRichHtml이 <br>/문단을 \n으로 보존하므로 그 \n을 기준으로 나눈다.
-// 아주 짧은 조각(대화문 한 줄 등)만 인접 조각과 합쳐 과도한 분할을 막는다.
+// 같은 컬럼에 온 조각들은 렌더 시 하나의 박스로 병합되므로, 조각을 잘게 나눌수록
+// 컬럼 끝을 촘촘히 채운다(여백 최소화). 큰 문단은 문장 단위로 세분화한다.
 function splitPassageParts(html: string): string[] {
   const sanitized = sanitizeRichHtml(html);
   if (!sanitized.trim()) return [];
@@ -388,19 +388,59 @@ function splitPassageParts(html: string): string[] {
     units = lines.length > 1 ? lines : [sanitized.trim()];
   }
 
-  // 2) 아주 짧은 조각(대화문 등)은 앞 조각에 붙여 과분할 방지.
-  //    단, 조각을 억지로 크게 만들지 않는다(컬럼에 맞추는 건 페이지네이션이 담당).
-  const MIN_CHUNK = 220; // 이보다 짧은 조각은 앞과 병합
-  const chunks: string[] = [];
+  // 2) 큰 문단(400자↑)은 문장 경계로 세분화 → 컬럼을 더 촘촘히 채움.
+  //    조각 경계는 렌더 시 병합되므로 시각적으로는 이어진 문단으로 보인다.
+  //    단, 문단 경계 조각과 문장 경계 조각을 구분하기 위해 마커(\u2029)를 쓴다.
+  const SENT_SPLIT_THRESHOLD = 400;
+  const fine: string[] = [];
+  const isParaStart: boolean[] = []; // 각 조각이 "새 문단의 시작"인지
   for (const u of units) {
-    if (chunks.length > 0 && chunks[chunks.length - 1].length < MIN_CHUNK) {
-      chunks[chunks.length - 1] = chunks[chunks.length - 1] + '\n' + u;
+    if (u.length <= SENT_SPLIT_THRESHOLD) {
+      fine.push(u);
+      isParaStart.push(true);
     } else {
-      chunks.push(u);
+      // 문장 경계 분할: 마침표/물음표/느낌표(+닫는 따옴표) 뒤 공백 기준
+      const sentences = u.split(/(?<=[.!?]["'\u201d\u2019]?)\s+/);
+      let buf = '';
+      let first = true;
+      const MIN_SENT_CHUNK = 160;
+      for (const s of sentences) {
+        if (buf === '') buf = s;
+        else if (buf.length < MIN_SENT_CHUNK) buf = buf + ' ' + s;
+        else {
+          fine.push(buf);
+          isParaStart.push(first);
+          first = false;
+          buf = s;
+        }
+      }
+      if (buf) {
+        fine.push(buf);
+        isParaStart.push(first);
+      }
     }
   }
 
-  return chunks;
+  // 3) 아주 짧은 조각은 앞 조각과 병합해 과분할 방지
+  const MIN_CHUNK = 120;
+  const chunks: string[] = [];
+  const chunkParaStart: boolean[] = [];
+  for (let i = 0; i < fine.length; i++) {
+    if (chunks.length > 0 && chunks[chunks.length - 1].length < MIN_CHUNK) {
+      // 병합: 문단 시작 조각이면 문단 구분(\n\n), 문장 이어짐이면 공백
+      const joiner = isParaStart[i] ? '\n\n' : ' ';
+      chunks[chunks.length - 1] += joiner + fine[i];
+    } else {
+      chunks.push(fine[i]);
+      chunkParaStart.push(isParaStart[i]);
+    }
+  }
+
+  // 4) 조각 앞머리에 "문단 이어짐" 마커 부착 (렌더 병합 시 올바른 joiner 선택용)
+  //    문단 시작 조각: 그대로 / 문장 이어짐 조각: \u2029 마커를 앞에 붙임
+  return chunks.map((c, i) =>
+    i > 0 && !chunkParaStart[i] ? '\u2029' + c : c
+  );
 }
 
 // ─── 답안 가이드 (서술형 답란 스캐폴딩) ───
@@ -3989,9 +4029,16 @@ function renderColumnItems(items: Block[]): React.ReactNode[] {
         run.push(items[m]);
         m++;
       }
-      const mergedHtml = run
-        .map((rb) => rb.passagePart!.html)
-        .join('\n\n');
+      // 병합: 조각 앞의 \u2029 마커 = 같은 문단의 문장 이어짐(공백으로 연결),
+      // 마커 없음 = 새 문단(\n\n으로 연결)
+      let mergedHtml = '';
+      run.forEach((rb, ri) => {
+        const raw = rb.passagePart!.html;
+        const isSentCont = raw.startsWith('\u2029');
+        const body = isSentCont ? raw.slice(1) : raw;
+        if (ri === 0) mergedHtml = body;
+        else mergedHtml += (isSentCont ? ' ' : '\n\n') + body;
+      });
       const firstIdx = run[0].passagePart!.index;
       const lastIdx = run[run.length - 1].passagePart!.index;
       const total = run[0].passagePart!.total;
@@ -4263,7 +4310,8 @@ function PassageView({
       : 'q-passage';
   // 문단(빈 줄) 단위로 나눠 각각 렌더 → 문단 간격을 CSS로 정밀 제어
   // (pre-wrap 빈 줄은 한 줄 전체 높이를 차지해 간격이 과했음)
-  const sanitized = sanitizeRichHtml(html);
+  // \u2029 = 문장 이어짐 마커(조각 병합용) — 렌더 시 제거
+  const sanitized = sanitizeRichHtml(html).replace(/\u2029/g, '');
   const paragraphs = sanitized
     .split(/\n\s*\n/)
     .map((s) => s.replace(/^\n+|\n+$/g, ''))
