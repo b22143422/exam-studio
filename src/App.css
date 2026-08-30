@@ -2224,8 +2224,8 @@ textarea {
 .q-passage {
   margin-left: 5mm;
   padding: 2.5mm 3mm;
-  border-left: 0.5px solid var(--ink-3);
-  border-right: 0.5px solid var(--ink-3);
+  border: 0.5px solid var(--ink-3);
+  border-radius: 1mm;
   background: rgba(0, 0, 0, 0.012);
   font-size: 9pt;
   line-height: 1.7;
@@ -2236,37 +2236,6 @@ textarea {
   text-justify: inter-word;
   hyphens: auto;
   -webkit-hyphens: auto;
-}
-
-/* 쪼개진 본문 조각들이 하나의 박스처럼 보이게 */
-.q-passage-first {
-  border-top: 0.5px solid var(--ink-3);
-  border-radius: 1mm 1mm 0 0;
-  padding-top: 2.5mm;
-}
-
-.q-passage-mid {
-  padding-top: 0;
-  padding-bottom: 2.5mm;
-}
-
-/* mid/last 조각은 윗쪽 단락과 자연스럽게 이어지도록 위 여백만 살림 */
-.q-passage-mid,
-.q-passage-last {
-  padding-top: 0;
-}
-
-.q-passage-last {
-  border-bottom: 0.5px solid var(--ink-3);
-  border-radius: 0 0 1mm 1mm;
-  padding-bottom: 2.5mm;
-}
-
-/* 첫 조각이면서 마지막 조각인 경우 (짧은 본문) */
-.q-passage-first.q-passage-last {
-  border: 0.5px solid var(--ink-3);
-  border-radius: 1mm;
-  padding: 2.5mm 3mm;
 }
 
 .q-passage strong {
@@ -3679,18 +3648,6 @@ textarea {
    PATCH: 긴 지문 박스 / 제시어 조건
 ─────────────────────────────────────────────────────── */
 
-/* 분할된 본문 조각도 테두리가 끊어져 보이지 않게 전체 박스로 처리 */
-.q-passage,
-.q-passage-first,
-.q-passage-mid,
-.q-passage-last,
-.q-passage-first.q-passage-last {
-  border: 0.5px solid var(--ink-3);
-  border-radius: 1mm;
-  padding: 2.5mm 3mm;
-  margin-bottom: 1.5mm;
-}
-
 /* 조건 입력 UI */
 .cp-condition-inputs {
   flex: 1;
@@ -3761,24 +3718,6 @@ textarea {
   overflow: visible;
 }
 
-/* 이어지는 지문 조각은 별도 박스이되, 사용자가 '본문이 이어진다'고 알 수 있게 작게 표시 */
-.q-passage-continue {
-  display: inline-block;
-  margin: 0 0 1.2mm 0;
-  padding: 0.35mm 1.4mm;
-  border-radius: 0.7mm;
-  background: rgba(0, 0, 0, 0.06);
-  color: var(--ink-3);
-  font-size: 7pt;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-.q-passage-mid,
-.q-passage-last {
-  margin-top: 1.5mm;
-}
-
 /* 공통 지문/개별 지문이 발문과 한 블록으로 묶일 때 간격 과다 방지 */
 .q-common-group + .q-passage,
 .q-head + .q-passage {
@@ -3808,32 +3747,6 @@ textarea {
 .paper-wide .q {
   break-inside: avoid;
   page-break-inside: avoid;
-}
-
-/* 지문은 사용자가 입력한 원본을 하나의 큰 박스로 표시한다. */
-.q-passage,
-.q-passage-first,
-.q-passage-mid,
-.q-passage-last,
-.q-passage-first.q-passage-last {
-  border: 0.5px solid var(--ink-3) !important;
-  border-radius: 1mm !important;
-  padding: 2.5mm 3mm !important;
-  margin-top: 1.2mm;
-  margin-bottom: 1.5mm;
-  white-space: pre-wrap;
-  overflow: visible;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
-.q-passage-content {
-  white-space: pre-wrap;
-}
-
-/* 더 이상 지문을 여러 조각으로 나누지 않으므로 '지문 계속' 표시는 사용하지 않는다. */
-.q-passage-continue {
-  display: none !important;
 }
 
 /* 한 문제는 하나의 article로 유지한다. */
@@ -3917,10 +3830,12 @@ textarea {
   .answer-header-scope {
     margin-top: 3mm;
   }
+
 /* ═══════════════════════════════════════════════════════
-   [교체용] 지문 분할 + 수동 페이지나누기 + 여백 축소 CSS
-   ※ 이전에 붙였던 추가분(조각박스/페이지나누기/문단렌더 관련)이 있다면
-     그 블록들을 지우고 이걸로 교체하세요. 처음이면 App.css 맨 끝에 그대로.
+   지문 분할(조각 이어붙임) + 수동 페이지나누기  [통합 최종]
+   - 기본 .q-passage = 4변 테두리 완전체 (비분할 지문용)
+   - 분할 조각(.q-passage-frag-*)은 필요한 변만 열어 이어붙임
+   - .q(flex)의 gap 1.5mm를 조각 사이에서만 음수 마진으로 상쇄
 ═══════════════════════════════════════════════════════ */
 
 /* ─── 지문 문단 렌더 (문단 간격 정밀 제어) ─── */
@@ -3933,13 +3848,24 @@ textarea {
   margin-top: 1.2mm;
 }
 
-/* 지문 박스 상하 패딩 축소 (여백 최소화) */
+/* 지문 박스 상하 패딩 축소 (여백 최소화).
+   문단은 .q-passage-para가 렌더하므로 부모의 pre-wrap은 끈다
+   (마크업 공백이 빈 줄로 렌더되는 것 방지) */
 .q-passage {
   padding-top: 2mm !important;
   padding-bottom: 1.6mm !important;
+  white-space: normal;
 }
 
-/* ─── 지문 조각 (개별 렌더, GAP 0으로 이어붙어 한 박스처럼) ─── */
+/* ─── 지문 조각 이어붙임 ─── */
+/* 핵심: article(.q)의 flex gap(1.5mm)이 조각 사이를 벌리므로
+   연속된 조각의 위쪽에 -1.5mm 마진을 줘서 상쇄한다.
+   (측정 레이어에선 조각들이 서로 인접 형제가 아니라 이 규칙이
+   적용되지 않으므로, 측정=계산=렌더가 일치한다) */
+.q-passage-frag + .q-passage-frag {
+  margin-top: -1.5mm !important;
+}
+
 /* 첫 조각: 위만 닫힘, 아래 열림 */
 .q-passage-frag-first {
   border-bottom: none !important;
@@ -3955,7 +3881,6 @@ textarea {
   border-radius: 0 !important;
   padding-top: 0 !important;
   padding-bottom: 0 !important;
-  margin-top: 0 !important;
   margin-bottom: 0 !important;
 }
 
@@ -3964,12 +3889,10 @@ textarea {
   border-top: none !important;
   border-radius: 0 0 1mm 1mm !important;
   padding-top: 0 !important;
-  margin-top: 0 !important;
 }
 
-/* 조각이 새 문단으로 시작하면 위에 문단 간격 (첫 조각 제외).
-   ※ 자식 para의 margin-top은 margin collapse로 박스 밖으로 새어
-   조각 사이 갭(테두리 끊김)을 만들므로, 부모 padding-top으로 준다. */
+/* 조각이 새 문단으로 시작하면 위에 문단 간격 (부모 padding으로 줘야
+   margin collapse로 조각 사이 갭이 생기지 않는다) */
 .q-passage-frag-mid:not(.q-passage-frag-sentcont) {
   padding-top: 1.2mm !important;
 }
