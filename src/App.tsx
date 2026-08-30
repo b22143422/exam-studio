@@ -3508,8 +3508,12 @@ function paginate(
   // 측정 레이어(화면 밖)와 실제 렌더 사이의 미세한 오차(웹폰트 로드 타이밍,
   // 줄간격 반올림 등)를 흡수하기 위한 블록별 안전 버퍼.
   const MEASURE_BUFFER_PX = 2 * MM_TO_PX;
+  // 지문 조각은 한 지문에 수십 개가 이어질 수 있어 버퍼가 누적되면
+  // 컬럼 하단을 그만큼 못 채운다. 조각은 작은 버퍼만 준다.
+  const FRAG_BUFFER_PX = 0.5 * MM_TO_PX;
   const blockH = (block: Block): number =>
-    (heights[block.id] ?? 0) + MEASURE_BUFFER_PX;
+    (heights[block.id] ?? 0) +
+    (block.passagePart ? FRAG_BUFFER_PX : MEASURE_BUFFER_PX);
 
   const hasContent = (): boolean =>
     current.wide.length > 0 ||
@@ -3993,37 +3997,52 @@ function Column({ blocks }: { blocks: Block[] }) {
   );
 }
 
-// 한 컬럼(article) 안의 블록들을 렌더하되, 연속된 지문 조각은 하나의
 // 한 컬럼(article) 안의 블록들을 렌더한다. 지문 조각은 각자 측정된 모습
-// 그대로 개별 렌더된다(측정=렌더 → 오차 0). 조각들은 GAP 0으로 이어붙어
-// 좌우 테두리가 연결된 하나의 박스처럼 보인다. 앞 컬럼에서 넘어온 첫
-// 조각에만 "지문 계속"을 표시한다.
+// 그대로 개별 렌더된다(측정=렌더 → 오차 0). 연속된 조각들은 하나의
+// .q-frag-stack 래퍼로 감싸 article의 flex gap이 조각 사이에 끼어들지
+// 못하게 한다 → 조각들이 간격 0으로 붙어 좌우 테두리가 이어진 한 박스가
+// 된다. 앞 컬럼에서 넘어온 첫 조각에만 "지문 계속"을 표시한다.
 function renderColumnItems(items: Block[]): React.ReactNode[] {
   const out: React.ReactNode[] = [];
-  let prevPassageGroup: string | null = null;
-  items.forEach((b, k) => {
+  let k = 0;
+  while (k < items.length) {
+    const b = items[k];
     if (b.passagePart) {
-      const pp = b.passagePart;
-      // 이 컬럼에서 이 지문의 첫 조각인데 지문의 처음(index 0)이 아니면
-      // 앞 컬럼/페이지에서 이어진 것 → "지문 계속" 표시
-      const isColumnFirstOfPassage =
-        prevPassageGroup !== pp.passageGroupId;
-      const continued = isColumnFirstOfPassage && pp.index > 0;
-      prevPassageGroup = pp.passageGroupId;
+      // 같은 지문의 연속 조각들을 모아 하나의 스택으로
+      const pgId = b.passagePart.passageGroupId;
+      const run: Block[] = [b];
+      let m = k + 1;
+      while (
+        m < items.length &&
+        items[m].passagePart &&
+        items[m].passagePart!.passageGroupId === pgId
+      ) {
+        run.push(items[m]);
+        m++;
+      }
+      const firstIdx = run[0].passagePart!.index;
       out.push(
-        <PassageFragment
-          key={`pf-${pp.passageGroupId}-${pp.index}`}
-          html={pp.html}
-          index={pp.index}
-          total={pp.total}
-          continued={continued}
-        />
+        <div className="q-frag-stack" key={`stack-${pgId}-${firstIdx}`}>
+          {run.map((rb) => {
+            const pp = rb.passagePart!;
+            return (
+              <PassageFragment
+                key={`pf-${pp.passageGroupId}-${pp.index}`}
+                html={pp.html}
+                index={pp.index}
+                total={pp.total}
+                continued={pp.index === firstIdx && firstIdx > 0}
+              />
+            );
+          })}
+        </div>
       );
+      k = m;
     } else {
-      prevPassageGroup = null;
       out.push(<Fragment key={`b-${k}`}>{b.render()}</Fragment>);
+      k++;
     }
-  });
+  }
   return out;
 }
 
