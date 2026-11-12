@@ -685,6 +685,22 @@ export default function App() {
     persistLibrary(next);
   };
 
+  // 선택한 여러 시험지를 한 번에 삭제. 삭제했으면 true를 반환한다.
+  const deletePapers = (ids: string[]): boolean => {
+    if (ids.length === 0) return false;
+    if (
+      !confirm(
+        `선택한 ${ids.length}개 시험지를 라이브러리에서 삭제할까요?\n\n삭제 후에는 되돌릴 수 없습니다.`
+      )
+    )
+      return false;
+    const idSet = new Set(ids);
+    const next = library.filter((p) => !idSet.has(p.id));
+    setLibrary(next);
+    persistLibrary(next);
+    return true;
+  };
+
   const newBlankPaper = () => {
     const hasWork = questions.length > 0 || worksheetItems.length > 0;
     if (hasWork) {
@@ -777,6 +793,7 @@ export default function App() {
         onSavePaper={savePaper}
         onLoadPaper={loadPaper}
         onDeletePaper={deletePaper}
+        onDeletePapers={deletePapers}
         onNewBlank={newBlankPaper}
         onExportLibrary={exportLibrary}
         onImportLibrary={importLibrary}
@@ -915,6 +932,7 @@ interface ControlPanelProps {
   onSavePaper: () => void;
   onLoadPaper: (id: string) => void;
   onDeletePaper: (id: string) => void;
+  onDeletePapers: (ids: string[]) => boolean;
   onNewBlank: () => void;
   onExportLibrary: () => void;
   onImportLibrary: (file: File) => void;
@@ -1104,6 +1122,7 @@ function ControlPanel({
   onSavePaper,
   onLoadPaper,
   onDeletePaper,
+  onDeletePapers,
   onNewBlank,
   onExportLibrary,
   onImportLibrary,
@@ -1112,6 +1131,31 @@ function ControlPanel({
   const [listExpanded, setListExpanded] = useState(false);
   const [answersExpanded, setAnswersExpanded] = useState(false);
   const [libraryExpanded, setLibraryExpanded] = useState(false);
+  // 라이브러리 묶음 선택/삭제 모드
+  const [librarySelectMode, setLibrarySelectMode] = useState(false);
+  const [selectedPaperIds, setSelectedPaperIds] = useState<Set<string>>(
+    new Set()
+  );
+
+  const togglePaperSelect = (id: string) => {
+    setSelectedPaperIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const exitLibrarySelect = () => {
+    setLibrarySelectMode(false);
+    setSelectedPaperIds(new Set());
+  };
+
+  const bulkDeletePapers = () => {
+    if (onDeletePapers(Array.from(selectedPaperIds))) {
+      exitLibrarySelect();
+    }
+  };
 
   // 그룹화 모드: 문제 목록에서 multi-select 후 묶기
   const [groupingMode, setGroupingMode] = useState(false);
@@ -2031,6 +2075,55 @@ function ControlPanel({
               현재 시험지 저장
             </button>
 
+            {/* 묶음 선택/삭제 모드 바 */}
+            {library.length > 0 &&
+              (librarySelectMode ? (
+                <div className="cp-grouping-active cp-library-selectbar">
+                  <span className="cp-grouping-count">
+                    {selectedPaperIds.size}개 선택됨
+                  </span>
+                  <button
+                    className="cp-grouping-cancel"
+                    onClick={() =>
+                      setSelectedPaperIds(
+                        selectedPaperIds.size === library.length
+                          ? new Set()
+                          : new Set(library.map((p) => p.id))
+                      )
+                    }
+                  >
+                    {selectedPaperIds.size === library.length
+                      ? '전체 해제'
+                      : '전체 선택'}
+                  </button>
+                  <button
+                    className="cp-library-bulk-delete"
+                    onClick={bulkDeletePapers}
+                    disabled={selectedPaperIds.size === 0}
+                    title="선택한 시험지를 한 번에 삭제"
+                  >
+                    {selectedPaperIds.size > 0
+                      ? `${selectedPaperIds.size}개 삭제`
+                      : '삭제'}
+                  </button>
+                  <button
+                    className="cp-grouping-cancel"
+                    onClick={exitLibrarySelect}
+                  >
+                    취소
+                  </button>
+                </div>
+              ) : (
+                <div className="cp-grouping-bar">
+                  <button
+                    className="cp-grouping-btn"
+                    onClick={() => setLibrarySelectMode(true)}
+                  >
+                    ☑ 묶음 선택 삭제
+                  </button>
+                </div>
+              ))}
+
             {library.length === 0 ? (
               <div className="cp-empty">
                 저장된 시험지가 없습니다.
@@ -2041,34 +2134,72 @@ function ControlPanel({
               </div>
             ) : (
               <ul className="cp-library-list">
-                {library.map((paper) => (
-                  <li key={paper.id} className="cp-library-item">
-                    <div className="cp-library-info">
-                      <div className="cp-library-name">{paper.name}</div>
-                      <div className="cp-library-meta">
-                        <span>{paper.questions.length}문항</span>
-                        <span className="cp-library-dot">·</span>
-                        <span>{formatRelDate(paper.createdAt)}</span>
+                {library.map((paper) => {
+                  const isChecked = selectedPaperIds.has(paper.id);
+                  return (
+                    <li
+                      key={paper.id}
+                      className={`cp-library-item ${
+                        librarySelectMode ? 'selectable' : ''
+                      } ${librarySelectMode && isChecked ? 'selected' : ''}`}
+                      onClick={
+                        librarySelectMode
+                          ? () => togglePaperSelect(paper.id)
+                          : undefined
+                      }
+                    >
+                      {librarySelectMode && (
+                        <span
+                          className={`cp-library-check ${
+                            isChecked ? 'on' : ''
+                          }`}
+                          aria-hidden="true"
+                        >
+                          <svg
+                            width="10"
+                            height="10"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                          >
+                            <path
+                              d="M3 8.5L6.5 12L13 4.5"
+                              stroke="currentColor"
+                              strokeWidth="2.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </span>
+                      )}
+                      <div className="cp-library-info">
+                        <div className="cp-library-name">{paper.name}</div>
+                        <div className="cp-library-meta">
+                          <span>{paper.questions.length}문항</span>
+                          <span className="cp-library-dot">·</span>
+                          <span>{formatRelDate(paper.createdAt)}</span>
+                        </div>
                       </div>
-                    </div>
-                    <div className="cp-library-tools">
-                      <button
-                        className="cp-library-load"
-                        onClick={() => onLoadPaper(paper.id)}
-                        title="이 시험지로 불러오기"
-                      >
-                        불러오기
-                      </button>
-                      <button
-                        className="cp-library-delete danger"
-                        onClick={() => onDeletePaper(paper.id)}
-                        title="라이브러리에서 삭제"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </li>
-                ))}
+                      {!librarySelectMode && (
+                        <div className="cp-library-tools">
+                          <button
+                            className="cp-library-load"
+                            onClick={() => onLoadPaper(paper.id)}
+                            title="이 시험지로 불러오기"
+                          >
+                            불러오기
+                          </button>
+                          <button
+                            className="cp-library-delete danger"
+                            onClick={() => onDeletePaper(paper.id)}
+                            title="라이브러리에서 삭제"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
 

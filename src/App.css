@@ -3939,3 +3939,63 @@ textarea {
   color: var(--accent);
   font-weight: 700;
 }
+/* ═══════════════════════════════════════════════════════
+   라이브러리 묶음 선택/일괄 삭제 (추가분)
+   ※ App.css 맨 끝에 그대로 붙여넣으세요.
+═══════════════════════════════════════════════════════ */
+
+.cp-library-selectbar {
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+/* 선택 모드에서 항목 전체가 클릭(토글) 대상 */
+.cp-library-item.selectable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.cp-library-item.selected {
+  border-color: var(--accent);
+  background: rgba(245, 185, 66, 0.08);
+}
+
+/* 체크박스 */
+.cp-library-check {
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--bg);
+  display: grid;
+  place-items: center;
+  color: transparent;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.cp-library-check.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a1207;
+}
+
+/* 일괄 삭제 버튼 */
+.cp-library-bulk-delete {
+  padding: 6px 12px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 5px;
+  transition: all 0.15s ease;
+}
+
+.cp-library-bulk-delete:hover:not(:disabled) {
+  background: #ef8f8f;
+}
+
+.cp-library-bulk-delete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
