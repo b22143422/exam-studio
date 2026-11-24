@@ -42,6 +42,8 @@ interface Question {
   questionText: string;       // 발문 (위지윅 HTML)
   hasPassage: boolean;
   passage: string;            // 본문 (위지윅 HTML)
+  hasBogi: boolean;           // 보기/설명 박스 포함 여부
+  bogi: string;               // 보기/설명 박스 내용 (위지윅 HTML) — 지문과 선지 사이 별도 박스
   conditions: Condition[];    // 영작 조건 (서술형 전용)
   choices: string[];          // 객관식 선택지 [5]
   answerLines: number;        // 서술형 답란 줄 수
@@ -136,6 +138,8 @@ function normalizeQuestion(q: any): Question {
     questionText: q?.questionText ?? '',
     hasPassage: !!q?.hasPassage,
     passage: q?.passage ?? '',
+    hasBogi: !!q?.hasBogi,
+    bogi: q?.bogi ?? '',
     conditions: Array.isArray(q?.conditions)
       ? q.conditions.map((c: any) =>
           typeof c === 'string'
@@ -973,6 +977,8 @@ interface ComposerState {
   questionText: string;
   hasPassage: boolean;
   passage: string;
+  hasBogi: boolean;
+  bogi: string;
   conditions: Condition[];
   choices: string[];
   answerLines: number;
@@ -988,6 +994,8 @@ const blankComposer: ComposerState = {
   questionText: '',
   hasPassage: false,
   passage: '',
+  hasBogi: false,
+  bogi: '',
   conditions: [],
   choices: ['', '', '', '', ''],
   answerLines: 3,
@@ -1249,6 +1257,8 @@ function ControlPanel({
           questionText: q.questionText,
           hasPassage: q.hasPassage,
           passage: q.passage,
+          hasBogi: q.hasBogi,
+          bogi: q.bogi,
           conditions: q.conditions.map((c) => ({ ...c })),
           choices: [...q.choices],
           answerLines: q.answerLines,
@@ -1651,6 +1661,49 @@ function ControlPanel({
                 }
                 placeholder="발문과 선지(또는 답란) 사이에 들어갈 본문/지문/예문. 단어/구절 드래그 후 B 또는 U 버튼으로 강조 표시."
                 minHeight={120}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* 보기/설명 박스 (모든 유형 공통) — 지문과 별개로 선지 앞에 들어가는 박스 */}
+        <div className="cp-passage-block">
+          <label className="cp-checkbox-label">
+            <input
+              type="checkbox"
+              checked={composer.hasBogi}
+              onChange={(e) =>
+                setComposer({ ...composer, hasBogi: e.target.checked })
+              }
+            />
+            <span className="cp-checkbox-box" aria-hidden="true">
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+                <path
+                  d="M3 8.5L6.5 12L13 4.5"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            <span className="cp-checkbox-text">
+              보기 / 설명 박스 포함
+              <em>
+                〈보기〉 문장 목록, a~f 설명 리스트 등 — 지문과 별개 박스로 선지
+                앞에 출력
+              </em>
+            </span>
+          </label>
+          {composer.hasBogi && (
+            <div className="cp-passage-input">
+              <RichTextEditor
+                value={composer.bogi}
+                onChange={(html) => setComposer({ ...composer, bogi: html })}
+                placeholder={
+                  '박스에 들어갈 내용. 첫 줄에 <보기> 라벨이 필요하면 직접 입력하세요.\n예:\n<보기>\n◦ That park is one of the most beautiful spot...\n◦ He is the fourth most influential politician...'
+                }
+                minHeight={100}
               />
             </div>
           )}
@@ -2666,6 +2719,7 @@ function QuestionList({
             <span className="cp-list-badge pgbreak">⤵ 페이지</span>
           )}
           {q.hasPassage && <span className="cp-list-badge">본문</span>}
+          {q.hasBogi && <span className="cp-list-badge">보기</span>}
           {q.conditions.length > 0 && (
             <span className="cp-list-badge cond">조건</span>
           )}
@@ -4395,6 +4449,8 @@ function QuestionBlock({
         <PassageView html={q.passage} />
       )}
 
+      {q.hasBogi && !isPlainTextEmpty(q.bogi) && <BogiView html={q.bogi} />}
+
       {q.type === 'written' && q.conditions.length > 0 && (
         <ConditionsView conditions={q.conditions} />
       )}
@@ -4504,6 +4560,28 @@ function PassageView({
       {continued && (
         <span className="q-passage-continued">지문 계속</span>
       )}
+      {paragraphs.map((p, i) => (
+        <span
+          key={i}
+          className="q-passage-para"
+          dangerouslySetInnerHTML={{ __html: p }}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ─── 보기/설명 박스 ───
+// 지문과 별개로 선지(또는 답란) 앞에 들어가는 박스.
+// 〈보기〉 문장 목록, a~f 설명 리스트 등에 사용. 스타일은 지문 박스와 동일.
+function BogiView({ html }: { html: string }) {
+  const sanitized = sanitizeRichHtml(html);
+  const paragraphs = sanitized
+    .split(/\n\s*\n/)
+    .map((s) => s.replace(/^\n+|\n+$/g, ''))
+    .filter((s) => s.trim() !== '');
+  return (
+    <div className="q-passage q-bogi">
       {paragraphs.map((p, i) => (
         <span
           key={i}
