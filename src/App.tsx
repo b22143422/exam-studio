@@ -444,9 +444,9 @@ function splitPassageParts(html: string): string[] {
 }
 
 // ─── 답안 가이드 (서술형 답란 스캐폴딩) ───
-// 가이드 뼈대 문장에 학생이 채울 빈칸을 ⟦GBLANK:s|m|l⟧ 토큰으로 심는다.
-// s=짧음, m=보통, l=긺 (밑줄 길이).
-type GuideBlankLen = 's' | 'm' | 'l';
+// 가이드 뼈대 문장에 학생이 채울 빈칸을 ⟦GBLANK:s|m|l|f⟧ 토큰으로 심는다.
+// s=짧음, m=보통, l=긺 (고정 밑줄), f=줄전체 (그 줄의 남은 폭 전부).
+type GuideBlankLen = 's' | 'm' | 'l' | 'f';
 
 function makeGuideBlankToken(len: GuideBlankLen): string {
   return `⟦GBLANK:${len}⟧`;
@@ -460,7 +460,7 @@ interface GuideToken {
 
 function parseGuide(guide: string): GuideToken[] {
   const result: GuideToken[] = [];
-  const regex = /⟦GBLANK:([sml])⟧/g;
+  const regex = /⟦GBLANK:([smlf])⟧/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = regex.exec(guide)) !== null) {
@@ -478,8 +478,38 @@ function parseGuide(guide: string): GuideToken[] {
 
 // 가이드에 실제로 빈칸 토큰이 하나라도 있는지
 function guideHasBlanks(guide: string): boolean {
-  return /⟦GBLANK:[sml]⟧/.test(guide);
+  return /⟦GBLANK:[smlf]⟧/.test(guide);
 }
+
+// 가이드를 줄 단위로 나눠 각 줄의 토큰 배열로. (f 빈칸은 줄 안에서
+// 남은 폭 전부를 차지해야 하므로, 렌더는 줄 단위 flex로 한다)
+function parseGuideLines(guide: string): GuideToken[][] {
+  return guide.split('\n').map((line) => parseGuide(line));
+}
+
+// ─── 예시 형태 프리셋 (답안 가이드에 원클릭 삽입할 레이아웃 뼈대) ───
+const GUIDE_PRESETS: { label: string; title: string; template: string }[] = [
+  {
+    label: '①②③',
+    title: '원문자 목록 — 각 항목을 한 줄씩 작성',
+    template: '① ⟦GBLANK:f⟧\n② ⟦GBLANK:f⟧\n③ ⟦GBLANK:f⟧',
+  },
+  {
+    label: '(1)(2)',
+    title: '소문항별 답 줄',
+    template: '(1) ⟦GBLANK:f⟧\n(2) ⟦GBLANK:f⟧',
+  },
+  {
+    label: '(a)(b)',
+    title: '(a)(b) 단어 빈칸',
+    template: '(a) ⟦GBLANK:m⟧\n(b) ⟦GBLANK:m⟧',
+  },
+  {
+    label: '답: 줄',
+    title: '답: 뒤에 줄 끝까지 밑줄',
+    template: '답: ⟦GBLANK:f⟧',
+  },
+];
 
 // 지문은 더 이상 임의 분할하지 않습니다.
 // 사용자가 입력한 원본 HTML을 하나의 박스로 유지합니다.
@@ -1012,7 +1042,12 @@ function AnswerGuideEditor({
     onChange('');
   };
 
-  const tokens = parseGuide(guide);
+  // 예시 형태(프리셋)를 현재 내용 뒤에 붙인다. 내용이 있으면 줄바꿈 후 추가.
+  const insertPreset = (template: string) => {
+    const next =
+      guide.trim() === '' ? template : guide.replace(/\n*$/, '') + '\n' + template;
+    onChange(next);
+  };
 
   return (
     <div className="cp-guide-block">
@@ -1054,9 +1089,32 @@ function AnswerGuideEditor({
         >
           긺
         </button>
+        <button
+          className="cp-guide-blank-btn len-f"
+          onClick={() => makeBlank('f')}
+          disabled={!hasSelection}
+          title="선택한 부분을 줄 끝까지 차는 빈칸으로"
+        >
+          줄전체
+        </button>
         <span className="cp-guide-hint">
           {hasSelection ? '선택됨 ✓' : '문장에서 채울 부분 드래그'}
         </span>
+      </div>
+
+      {/* 예시 형태: 자주 쓰는 답란 레이아웃 원클릭 삽입 */}
+      <div className="cp-guide-presets">
+        <span className="cp-guide-toolbar-label">예시 형태:</span>
+        {GUIDE_PRESETS.map((p) => (
+          <button
+            key={p.label}
+            className="cp-guide-preset-btn"
+            onClick={() => insertPreset(p.template)}
+            title={p.title}
+          >
+            {p.label}
+          </button>
+        ))}
       </div>
 
       <textarea
@@ -1077,16 +1135,33 @@ function AnswerGuideEditor({
         <div className="cp-guide-preview">
           <span className="cp-guide-preview-label">미리보기</span>
           <div className="cp-guide-preview-text">
-            {tokens.map((t, i) =>
-              t.type === 'text' ? (
-                <span key={i}>{t.text}</span>
-              ) : (
-                <span
-                  key={i}
-                  className={`cp-guide-preview-blank len-${t.len ?? 'm'}`}
-                />
-              )
-            )}
+            {parseGuideLines(guide).map((lineTokens, li) => {
+              const hasFull = lineTokens.some(
+                (t) => t.type === 'blank' && t.len === 'f'
+              );
+              return (
+                <div
+                  key={li}
+                  className={`cp-guide-preview-line ${
+                    hasFull ? 'has-full' : ''
+                  }`}
+                >
+                  {lineTokens.length === 0 && ' '}
+                  {lineTokens.map((t, i) =>
+                    t.type === 'text' ? (
+                      <span key={i}>{t.text}</span>
+                    ) : (
+                      <span
+                        key={i}
+                        className={`cp-guide-preview-blank len-${
+                          t.len ?? 'm'
+                        }`}
+                      />
+                    )
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -4553,24 +4628,39 @@ function AnswerArea({ lines, guide }: { lines: number; guide: string }) {
   const useGuide = guideHasBlanks(guide);
 
   if (useGuide) {
-    const tokens = parseGuide(guide);
+    // 줄 단위 렌더: f(줄전체) 빈칸이 있는 줄은 flex로 남은 폭을 전부 차지,
+    // 나머지 줄은 기존처럼 인라인 흐름(자동 줄바꿈).
+    const lines = parseGuideLines(guide);
     return (
       <div className="q-answer">
         <div className="q-answer-label">답</div>
         <div className="q-answer-guide">
-          {tokens.map((t, i) => {
-            if (t.type === 'text') {
-              return (
-                <span key={i} className="q-answer-guide-text">
-                  {t.text}
-                </span>
-              );
-            }
+          {lines.map((lineTokens, li) => {
+            const hasFull = lineTokens.some(
+              (t) => t.type === 'blank' && t.len === 'f'
+            );
             return (
-              <span
-                key={i}
-                className={`q-answer-guide-blank len-${t.len ?? 'm'}`}
-              />
+              <div
+                key={li}
+                className={`q-answer-guide-line ${hasFull ? 'has-full' : ''}`}
+              >
+                {lineTokens.length === 0 && ' '}
+                {lineTokens.map((t, i) => {
+                  if (t.type === 'text') {
+                    return (
+                      <span key={i} className="q-answer-guide-text">
+                        {t.text}
+                      </span>
+                    );
+                  }
+                  return (
+                    <span
+                      key={i}
+                      className={`q-answer-guide-blank len-${t.len ?? 'm'}`}
+                    />
+                  );
+                })}
+              </div>
             );
           })}
         </div>

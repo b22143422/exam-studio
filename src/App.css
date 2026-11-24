@@ -3999,3 +3999,93 @@ textarea {
   opacity: 0.4;
   cursor: not-allowed;
 }
+/* ═══════════════════════════════════════════════════════
+   답안 가이드: 예시 형태 프리셋 + 줄전체(f) 빈칸 (추가분)
+   ※ App.css 맨 끝에 그대로 붙여넣으세요.
+═══════════════════════════════════════════════════════ */
+
+/* ─── 출력지: 가이드 줄 단위 렌더 ─── */
+.q-answer-guide-line {
+  min-height: 1.6em;
+}
+
+/* 줄전체(f) 빈칸이 있는 줄은 flex — 빈칸이 남은 폭을 전부 차지 */
+.q-answer-guide-line.has-full {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5mm;
+}
+
+.q-answer-guide-line.has-full .q-answer-guide-text {
+  flex: 0 1 auto;
+  white-space: pre-wrap;
+}
+
+.q-answer-guide-blank.len-f {
+  flex: 1 0 15mm;
+  width: auto;
+}
+
+/* f 빈칸이 flex 밖(일반 줄)에 섞인 예외 상황 대비 최소폭 */
+.q-answer-guide-line:not(.has-full) .q-answer-guide-blank.len-f {
+  display: inline-block;
+  width: 60mm;
+}
+
+/* ─── 에디터: 줄전체 버튼 ─── */
+.cp-guide-blank-btn.len-f {
+  letter-spacing: -0.02em;
+}
+
+/* ─── 에디터: 예시 형태 프리셋 줄 ─── */
+.cp-guide-presets {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+
+.cp-guide-preset-btn {
+  padding: 6px 11px;
+  background: var(--surface-2);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cp-guide-preset-btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  border-style: solid;
+  color: var(--accent);
+}
+
+/* ─── 에디터 미리보기: 줄 단위 + f 빈칸 ─── */
+.cp-guide-preview-line {
+  min-height: 1.5em;
+}
+
+.cp-guide-preview-line.has-full {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.cp-guide-preview-line.has-full span {
+  flex: 0 1 auto;
+}
+
+.cp-guide-preview-blank.len-f {
+  flex: 1 0 40px;
+  width: auto;
+}
+
+.cp-guide-preview-line:not(.has-full) .cp-guide-preview-blank.len-f {
+  display: inline-block;
+  width: 120px;
+}
